@@ -1,0 +1,33 @@
+library(sf)
+library(qgisprocess)
+library(terra)
+library(dplyr)
+
+
+#load data
+crimekrigged <- rast("Compressed/crimekrigging/hh.tif")
+
+network_edges <- st_read("network_edges2.sqlite")
+#buffer the network (20m)
+
+buffer <- st_buffer(network_edges,20) 
+
+
+#zonal_stats
+
+zonal <-  qgis_run_algorithm(
+  "native:zonalstatisticsfb",
+  INPUT=buffer,
+  INPUT_RASTER=crimekrigged,
+  RASTER_BAND=1,
+  STATISTICS=2,#MEAN
+)
+
+zonal_stats <- st_read(qgis_output(zonal,"OUTPUT"))
+ 
+zonal_rename <-  zonal_stats %>% rename(Crime=X_mean)
+
+summary(zonal_rename$Crime)
+
+st_write(zonal_stats,"network_edges3.sqlite",layer ='edges')
+
