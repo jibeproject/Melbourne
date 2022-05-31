@@ -1,1 +1,18 @@
 I have categorised  and Merged FOI point features for individual, highstreet and negative attributes  These will then be clustered and joined to OSM spatially. 
+
+
+ FOIs data have been enriched using OSM ( as shopping and other categories were missing from the FOI data as well).
+ 
+ Here is the current categorization:
+
+Individual points (postive) include: 
+
+Land marks, sports and community venue, cafes pubs restaurants and recreational venues.
+
+Negative points:
+
+Power, storage facilities, bus stops (this is from the UK), vehicle service and inspection, emergency facility, and dirty places like brothel, strip club, casino and grave yard, 
+
+Highstreet points:
+
+Shopping and market places, convenience stores, banks and post offices. 
