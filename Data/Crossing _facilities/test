@@ -2,4 +2,7 @@ We first found the point location for the corissing facilities around each link.
 
 Crossing facilities means either signalized or non-signalized crossing where individuals can safely cross the street 
 The TfGM crossing dataset https://data.gov.uk/dataset/094fa881-5c33-421d-8995-7e182aea3a88/bee-network and traffic signals https://data.gov.uk/dataset/3bfccaf7-3760-4f85-aedc-2904943a7ef7/gm-traffic-signal-locations dataset are found in those links.
+
+Victoria dataset:
+
 https://discover.data.vic.gov.au/dataset/traffic-lights
