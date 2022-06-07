@@ -19,7 +19,8 @@ Shopping and market places, convenience stores, banks and post offices.
 
 Next (updated 04/06/2022)>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 
-Workflow>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+Workflow>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>Folders / steps numbered by step 1 to 4:
+
 
 1. Points of interest feature is extracted from OSM using QGIS "QuickOSM" plug-in, and saved to local drive as a shapefile.
   The extracted shapefile is "OSM_Extract_AmenityFull.shp"
