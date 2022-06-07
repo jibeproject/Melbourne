@@ -1,0 +1,11 @@
+1. Points of interest feature is extracted from OSM using QGIS "QuickOSM" plug-in, and saved to local drive as a shapefile.
+  The extracted shapefile is "OSM_Extract_AmenityFull.shp"
+
+2. Points extracted from OSM are merged with Melbourne FOI dataset using R script "00_Process_OSM_RawExtraction.R". Output from this step, "Merged_FOI.csv" has coordinates and categorization of all points.
+
+3. R script "01_ClassifyFOI.R"  reads "Merged_FOI.csv", and classifies all FOI points based on their original classification into three new categories: individual, negative and highstreet.
+
+4. R script "02_SpatialClustering.R" clusters FOI points into clusters using k-nearest-neighbor (KNN) algorithm with the DBSCAN package. Outputs from this step are 3 csv files with coordinates of cluster centroids for individual, negative and highstreet layers.
+
+5. QGIS "Join attributes by nearest" tool is used to find OSM links that are close to cluster centroids. A threshold distance of 800 meters is used in this step. Final output from this step are three shapefiles in "04_Results" folder. 
+
