@@ -6,7 +6,7 @@ library("dplyr")
 library("operators")   #    %!in%
 library("data.table") 
 
-read0 <- read.csv("/03_ProcessedData/Merged_FOI.csv",
+read0 <- read.csv("C:/Temp/03_ProcessedData/Merged_FOI.csv",
                   header=TRUE, sep=",", stringsAsFactors=FALSE,check.names = FALSE)
 
 unique(read0$FTYPE)
@@ -18,7 +18,7 @@ head(read0)
 FOI_individual <- subset(read0, read0$FTYPE == 'place of worship' | read0$FTYPE == 'landmark'  | read0$FTYPE == 'place' | read0$FTYPE == 'sport facility' | read0$FTYPE == 'community space' |
                            read0$FTYPE == 'community venue' | read0$FTYPE == 'cultural centre' | read0$FTYPE == 'OSM_cafe_dinein' | read0$FTYPE == 'recreational resource')
 FOI_individual$categorization <- c('FOI_individual')
-write.csv(FOI_individual,file="/03_ProcessedData/FOI_individual.csv", row.names = FALSE)
+write.csv(FOI_individual,file="C:/Temp/03_ProcessedData/FOI_individual.csv", row.names = FALSE)
 
 FOI_negative <- subset(read0, read0$FTYPE == 'power facility' |  read0$FTYPE == 'storage facility' | read0$FTYPE == 'pipeline facility'   |
                           read0$FTYPE == 'hospital' | read0$FTYPE == 'emergency facility'| read0$FTYPE == 'dumping ground'| read0$FTYPE == 'OSM_dirty_places' |
@@ -28,7 +28,7 @@ write.csv(FOI_negative,file="/03_ProcessedData/FOI_negative.csv", row.names = FA
 
 FOI_highstreet <- subset(read0,    read0$FTYPE == 'commercial facility' | read0$FTYPE == "admin facility" | read0$FTYPE == "OSM_shopping")
 FOI_highstreet$categorization <- c('FOI_highstreet')
-write.csv(FOI_highstreet,file="/03_ProcessedData/FOI_highstreet.csv", row.names = FALSE)
+write.csv(FOI_highstreet,file="C:/Temp/03_ProcessedData/FOI_highstreet.csv", row.names = FALSE)
 
 
 
