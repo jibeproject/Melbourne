@@ -1,0 +1,69 @@
+rm(list=ls())   
+gc()  
+# setwd("/C:/Temp/02_Processing")
+library("dplyr") 
+library("foreign")  # read dbf from shapefiles
+
+#---------read dbf file from OSM extraction-----list of bar, cafe, restaurant point features extracted from OSM----------
+extract_OSM <- read.dbf(file='C:/Temp/01_GIS/OSM_Extract_AmenityFull.dbf')     # head(extract_OSM)
+unique(extract_OSM$amenity)
+
+extract_OSM_cafe_res <- subset(extract_OSM,extract_OSM$amenity =='pub' | extract_OSM$amenity =='cafe' | extract_OSM$amenity =='fast_food' | 
+                                            extract_OSM$amenity =='restaurant' | extract_OSM$amenity =='restaurant; cafe' |  extract_OSM$amenity == 'food_court')
+extract_OSM_cafe_res  <- subset(extract_OSM,select=c('amenity','long','lat'))
+colnames(extract_OSM_cafe_res )[1] <- c('FTYPE')
+extract_OSM_cafe_res $FTYPE <- "OSM_cafe_dinein"
+head(extract_OSM_cafe_res)
+
+extract_OSM_dirty_places <- subset(extract_OSM,extract_OSM$amenity =='toilets' | extract_OSM$amenity =='gambling' | extract_OSM$amenity =='nightclub' | 
+                                 extract_OSM$amenity =='stripclub' | extract_OSM$amenity =='casino'  | extract_OSM$amenity =='funeral_hall' | extract_OSM$amenity =="brothel"|
+                                   extract_OSM$amenity =="bus_station" | extract_OSM$amenity =="fire_station" | extract_OSM$amenity =="grave_yard" |
+                                    extract_OSM$amenity =="car_wash" | extract_OSM$amenity =="car_service" | extract_OSM$amenity =="vehicle_inspection" | extract_OSM$amenity =="smoking_area")   
+extract_OSM_dirty_places  <- subset(extract_OSM_dirty_places,select=c('amenity','long','lat'))
+colnames(extract_OSM_dirty_places )[1] <- c('FTYPE')
+extract_OSM_dirty_places $FTYPE <- "OSM_dirty_places"
+head(extract_OSM_dirty_places)
+
+extract_OSM_shopping <- subset(extract_OSM,extract_OSM$amenity =='marketplace' | extract_OSM$amenity =='convenience' | extract_OSM$amenity =='vending_machine' | 
+                                     extract_OSM$amenity =='cinema' | extract_OSM$amenity =='bank' | extract_OSM$amenity =='post_office')
+extract_OSM_shopping  <- subset(extract_OSM_shopping,select=c('amenity','long','lat'))
+colnames(extract_OSM_shopping )[1] <- c('FTYPE')
+extract_OSM_shopping $FTYPE <- "OSM_shopping"
+head(extract_OSM_shopping)
+
+
+#---------read dbf file from VIC FOI-----list of FOI (raw) from https://discover.data.vic.gov.au/dataset/vicmap-features-of-interest ----------
+FOI_raw <- read.dbf(file='C:/Temp/01_GIS/Melbourne_FOI_AOI/Mel_FOI_Full.dbf')    
+# head(FOI_raw)
+
+FOI_raw <- subset(FOI_raw,select=c('FTYPE','long','lat'))
+head(FOI_raw)
+# unique(FOI_raw$FTYPE)
+
+merged_FOI <- rbind(extract_OSM_cafe_res,FOI_raw)
+merged_FOI <- rbind(extract_OSM_dirty_places,merged_FOI)
+merged_FOI <- rbind(extract_OSM_shopping,merged_FOI)
+
+head(merged_FOI)
+
+
+unique(merged_FOI$FTYPE)
+
+
+
+
+
+write.csv(merged_FOI,file="C:/Temp/03_ProcessedData/Merged_FOI.csv",row.names = FALSE)
+
+
+
+
+
+
+
+
+
+
+
+
+
