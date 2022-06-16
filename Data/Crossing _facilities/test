@@ -1,8 +1,0 @@
-We first found the point location for the corissing facilities around each link. This data was extracted from TfGM data and also for OSM. Then we spatially joined the points to the lines using a buffer-based approach of 20 m, and summarized how many of these are attached to each link. Later on, just divide the count with the length. I hope this makes things clear about what was done for this. If you have further queries, please let me know.
-
-Crossing facilities means either signalized or non-signalized crossing where individuals can safely cross the street 
-The TfGM crossing dataset https://data.gov.uk/dataset/094fa881-5c33-421d-8995-7e182aea3a88/bee-network and traffic signals https://data.gov.uk/dataset/3bfccaf7-3760-4f85-aedc-2904943a7ef7/gm-traffic-signal-locations dataset are found in those links.
-
-Victoria dataset:
-
-https://discover.data.vic.gov.au/dataset/traffic-lights
