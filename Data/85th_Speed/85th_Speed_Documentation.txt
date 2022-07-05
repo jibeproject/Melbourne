@@ -1,0 +1,7 @@
+#----------------------85th speed data in the "maxspeed" column (i.e. the posted speed limit)
+
+
+For 85th speed:
+1. Raw data spatially joined from the "maxspeed" field from OpenStreetMap.
+
+2. For segments with missing data, a Random Forest model was calibrated using existing speed limit data  other road attributes to infer missing values. The Random Forest model is able to explain 64.3 % of variations in speed limit in the training data /area.
