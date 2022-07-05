@@ -1,0 +1,69 @@
+rm(list=ls())   # all variables will be removed
+gc()
+options(scipen = 999) # no scientific notion
+# library("rjson")
+library("dplyr") 
+library("operators")   #    %!in%
+library("foreign") 
+library("data.table") 
+library("sf")
+library("rgdal")
+
+#---------------load traffic counter data---------------point layer---------------WGS84---------------
+data_points_plot <- read_sf( "C:/AADT/cal_AADT_source.shp")
+data_points_plot$row_id <- c(1:nrow(data_points_plot))
+head(data_points_plot)
+data_points_data <- as.data.frame(subset(data_points_plot,select=c('row_id','HMGNS_FLOW'))) 
+data_points_data <- subset(data_points_data,select=-c(geometry)) # head(data_points_data)
+
+#---------------load OSM---------------line layer---------------WGS84---------------
+OSM_shape <- read_sf( "C:/AADT/01_GIS/OSM_BaseNetwork_WGS84.shp") # plot(OSM_shape)
+
+#---------------join data from traffic counter to OSM ---------------
+spatial_nearest_join <- st_nearest_feature(OSM_shape,data_points_plot) # head(spatial_nearest_join)
+spatial_nearest_join_dist <-  st_distance(OSM_shape, data_points_plot[spatial_nearest_join,], by_element=TRUE)
+cal_dist_output <- cbind(as.data.frame(spatial_nearest_join),as.data.frame(spatial_nearest_join_dist))
+colnames(cal_dist_output) <- c('row_id','dist_nearest')
+head(cal_dist_output)
+OSM_shape <- cbind(OSM_shape,cal_dist_output)
+OSM_shape <- left_join(OSM_shape,data_points_data)
+OSM_shape$dist_nearest <- as.numeric(OSM_shape$dist_nearest)
+OSM_shape$HMGNS_FLOW[OSM_shape$dist_nearest > 25] <- NA 
+# set threshold distance of 20 meters --- AADT invalid if the distance between road and counter greater than 25 meters
+OSM_shape$HMGNS_FLOW[OSM_shape$highway == 'pedestrian' | OSM_shape$highway == 'cycleway' | OSM_shape$highway == 'steps'] <- 0
+
+OSM_shape$fwd_slope_cal <- abs(OSM_shape$fwd_slope_)
+OSM_shape$fwd_slope_cal[is.na(OSM_shape$fwd_slope_cal)] <- mean(abs(OSM_shape$fwd_slope_),na.rm=TRUE)
+OSM_shape$elev_cal <- abs(OSM_shape$elev)
+OSM_shape$elev_cal[is.na(OSM_shape$elev_cal)] <- mean(abs(OSM_shape$elev),na.rm=TRUE)
+
+OSM_shape_missing <- subset(OSM_shape,is.na(OSM_shape$HMGNS_FLOW))
+OSM_shape_notmissing <- subset(OSM_shape,!is.na(OSM_shape$HMGNS_FLOW))
+OSM_shape <- subset(OSM_shape,select= -c(row_id, dist_nearest,fwd_slope_cal,elev_cal))
+head(OSM_shape)
+# unique(OSM_shape_notmissing$highway)
+#----export data ----- an OSM layer containing the AADT from actual traffic counters
+# st_write(OSM_shape, "C:/AADT/04_Results/AADT_output.shp", driver="ESRI Shapefile")
+
+
+#----------------- calibration_data ---------------------
+calibration_data <- as.data.frame(OSM_shape_notmissing )
+
+library("randomForest")   # library containing the random forest
+rf_model <-  randomForest(HMGNS_FLOW ~ freespeed + capacity + is_oneway + highway  + is_cycle + is_walk + is_car +  permlanes + fwd_slope_cal + elev_cal,
+              ntree= 128,data = OSM_shape_notmissing,importance=TRUE) 
+summary(rf_model)
+
+OSM_shape_missing$HMGNS_FLOW <- predict(rf_model, OSM_shape_missing)
+
+OSM_shape2 <- rbind(OSM_shape_missing,OSM_shape_notmissing)
+OSM_shape2$HMGNS_FLOW[OSM_shape2$highway == 'pedestrian' | OSM_shape2$highway == 'cycleway' | OSM_shape2$highway == 'steps'] <- 0
+OSM_shape2 <- subset(OSM_shape2,select= -c(row_id, dist_nearest,fwd_slope_cal,elev_cal))
+head(OSM_shape2)
+
+#----export data ----- an OSM layer containing the AADT from both actual traffic counters and RF inferred AADT
+st_write(OSM_shape2, "C:/AADT/04_Results/AADT_output_artificial.shp", driver="ESRI Shapefile")
+
+
+
+
