@@ -1,0 +1,50 @@
+#install.packages("qgisprocess", dependencies = TRUE)
+#install.packages(c("terra","GVI"))
+#install.packages(c("sf","sfheaders","rgdal","tidyverse","multidplyr"))
+library(terra)
+library(GVI)
+library(sf)
+library(sfheaders)
+library(rgdal)
+library(tidyverse)
+library(multidplyr)
+library(sp)
+library(sfheaders)
+
+
+include <iostream>
+
+
+
+#install.packages("remotes")
+#remotes::install_git("https://github.com/STBrinkmann/GVI")
+pack <- st_read("edge_data.gpkg",layer = "traffic_calm_july4",drivers = "GPKG")
+#head (pack)
+#network_edge <- readRDS(pack)
+network_edgesf <- st_as_sf(pack)
+head (network_edgesf)
+nrow(network_edgesf)
+pointsonedge <- st_line_sample (network_edgesf,density = 1/20, n = 1, type = "regular", sample = NULL) #each 20m, at least 1 point
+pointson <- st_sf(as.data.frame(network_edgesf), pointsonedge)
+nrow(pointson)
+pointson <- st_cast(pointson, "POINT")
+pointson <- st_as_sf(pointson)
+DSM <- rast("veg.tif")
+DTM <- rast("clipped_dem3.tif")
+
+Green <- rast("NDVI6.tif")
+test <- pointson[1,]
+test2 <- st_as_sf(test$pointsonedge)
+observer <- st_sf(sf_point(c(327248, 5812270)), crs = st_crs(28355))
+observer <- test %>% dplyr::mutate(VGVI = as.numeric(NA), 
+                                       id = 1:dplyr::n()) %>% dplyr::select(id, VGVI, dplyr::everything())
+# Download line feature and load as sf object
+isodistance <-st_read("iso2.gpkg",drivers = "GPKG")
+
+cVGVI <- vgvi_from_sf(observer = test2,
+                      dsm_rast = DSM, dtm_rast = DTM, greenspace_rast = Green,
+                      max_distance = 500, observer_height = 1.7,
+                      m = 1, b = 3, mode = "exponential", cores = 8, progress = T)
+
+
+rlang::last_error()
