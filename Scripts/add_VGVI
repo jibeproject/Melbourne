@@ -20,7 +20,7 @@ library(GVI)
 ######################################
 #PART 1: read vegetation geotiff-s and compress
 ######################################
-setwd("D:/JIBE/01_DataInput/EyeLevelGreenAUS/Vicmap_Vegetation/Vicmap_Vegetation/TreeCover_AOI/")
+setwd("D:/JIBE/01_DataInput/EyeLevelGreenAUS/TreeCover_AOI/")
 
 rlist <- list.files(getwd(), pattern="tif$", full.names=FALSE)
 
@@ -41,7 +41,7 @@ for(i in rlist){
     DATA_TYPE = 0,
     NODATA = 2,
     OPTIONS ='COMPRESS=LZW',
-    OUTPUT = paste0("D:/JIBE/01_DataInput/EyeLevelGreenAUS/Vicmap_Vegetation/Vicmap_Vegetation/TreeCover_AOI/compressed/",paste(as.name(name),".tif", sep = ""))
+    OUTPUT = paste0("D:/JIBE/01_DataInput/EyeLevelGreenAUS/TreeCover_AOI/compressed/",paste(as.name(name),".tif", sep = ""))
   )
 }
 
@@ -49,7 +49,7 @@ for(i in rlist){
 #PART 2: merge compressed geotiff-s
 ######################################
 getwd()
-setwd("D:/JIBE/01_DataInput/EyeLevelGreenAUS/Vicmap_Vegetation/Vicmap_Vegetation/TreeCover_AOI/compressed/")
+setwd("D:/JIBE/01_DataInput/EyeLevelGreenAUS/TreeCover_AOI/compressed/")
 rlist <- list.files(getwd(), pattern="tif$", full.names=FALSE)
 #read tiles in a list
 rl <- lapply(rlist, raster::raster)
