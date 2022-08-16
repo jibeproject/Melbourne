@@ -51,12 +51,16 @@ for(i in rlist){
 getwd()
 setwd("D:/JIBE/01_DataInput/EyeLevelGreenAUS/TreeCover_AOI/compressed/")
 rlist <- list.files(getwd(), pattern="tif$", full.names=FALSE)
+
 #read tiles in a list
 rl <- lapply(rlist, raster::raster)
-#read tiles in a list
+
+#create a RasterStack
 tiles <- lapply(rl, FUN=raster::stack)
+
 #merge tiles
 Green <- do.call(raster::merge, c(tiles, tolerance = 1))
+
 #set Coordinate Reference System
 crs(Green) <- "epsg:28355"
 
