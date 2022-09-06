@@ -1,0 +1,114 @@
+#SET UP
+rm(list = ls())
+
+library(terra)
+library(sfheaders)
+library(sf)
+install.packages("remotes")
+if (!require("remotes")) install.packages("remotes")
+library(remotes)
+install.packages("glue")
+if (!require("qgisprocess")) install.packages("qgisprocess")
+library(qgisprocess)
+help <- qgis_algorithms()
+qgis_show_help("gdal:warpreproject")
+
+remotes::install_git("https://github.com/STBrinkmann/GVI")
+install.packages("GVI", dependencies = TRUE)
+library(GVI)
+
+######################################
+#PART 1: read vegetation geotiff-s and compress
+######################################
+setwd("D:/JIBE/01_DataInput/EyeLevelGreenAUS/TreeCover_AOI/")
+
+rlist <- list.files(getwd(), pattern="tif$", full.names=FALSE)
+
+for(i in rlist){
+  assign(unlist(strsplit(i, "[.]"))[1], raster::raster(i))
+}
+
+#loop over geotiffs to compress and re project to 5m/5m resolution
+for(i in rlist){
+  name <- as.character(gsub('.{4}$', '', i))
+  tree_warp <- qgis_run_algorithm(
+    "gdal:warpreproject",
+    INPUT = get(name),
+    SOURCE_CRS = "EPSG:7899",
+    RESAMPLING = 0,
+    TARGET_CRS = "EPSG:28355",
+    TARGET_RESOLUTION = 5,
+    DATA_TYPE = 0,
+    NODATA = 2,
+    OPTIONS ='COMPRESS=LZW',
+    OUTPUT = paste0("D:/JIBE/01_DataInput/EyeLevelGreenAUS/TreeCover_AOI/compressed/",paste(as.name(name),".tif", sep = ""))
+  )
+}
+
+######################################
+#PART 2: merge compressed geotiff-s
+######################################
+getwd()
+setwd("D:/JIBE/01_DataInput/EyeLevelGreenAUS/TreeCover_AOI/compressed/")
+rlist <- list.files(getwd(), pattern="tif$", full.names=FALSE)
+#read tiles in a list
+rl <- lapply(rlist, raster::raster)
+#read tiles in a list
+tiles <- lapply(rl, FUN=raster::stack)
+#merge tiles
+Green <- do.call(raster::merge, c(tiles, tolerance = 1))
+#set Coordinate Reference System
+crs(Green) <- "epsg:28355"
+
+writeRaster(Green,'D:/JIBE/01_DataInput/EyeLevelGreenAUS/Green.tif', options=c('TFW=YES'))
+
+rm(list = ls())
+######################################
+#PART 3: get VGVI and attach to OSM
+######################################
+
+setwd("D:/JIBE/01_DataInput/EyeLevelGreenAUS")
+
+#read network
+osm <- st_read(file.path("edge_data/edge_data.gpkg"))
+
+#Input greenness and DEM data
+DSM <- rast("dsm_10_RE.tif")
+
+DEM <- rast("clipped_dem_re.tif")
+
+Green <- rast("Green.tif")
+
+#Take point sample on master map at certain distance and start/end offset
+pointsonedge <- st_line_sample(osm, density = 1/20, n = 1, type = "regular", sample = NULL) #each 20m, at least 1 point
+pointson <- st_sf(as.data.frame(osm), pointsonedge)
+pointson <- st_cast(pointson, "POINT")
+pointson <- st_as_sf(pointson)
+
+pVGVI <- vgvi_from_sf(observer = pointson,
+                      dsm_rast = DSM, dtm_rast = DEM, greenspace_rast = Green,
+                      max_distance = 300, observer_height = 1.7,
+                      m = 0.5, b = 8, mode = "logit", cores = 3, progress = T)
+
+rm(DEM, DSM, Green, pointsonedge, pointson)
+
+pVGVIbuffer <- st_buffer(pVGVI, dist = 0.5)
+
+rm(pVGVI)
+
+joinVGVIlines <- qgis_run_algorithm(
+  "qgis:joinbylocationsummary",
+  DISCARD_NONMATCHING = F,
+  INPUT = osm,
+  JOIN = pVGVIbuffer,
+  SUMMARIES = "mean", # 10 is for majority, 7 for median
+  JOIN_FIELDS = 'VGVI' #the column to join the attribute
+)
+
+joinVGVIlines_sf <- sf::read_sf(qgis_output(joinVGVIlines, "OUTPUT"))
+
+joinVGVIlines_sf_osm <- joinVGVIlines_sf %>% st_drop_geometry() %>% dplyr::select(ogc_fid, VGVI_mean)
+
+osm <- merge(osm, joinVGVIlines_sf_osm, by = 'ogc_fid')
+
+st_write(osm, file.path(paste("edge_data/edge_vgvi.gpkg")), driver="GPKG")
