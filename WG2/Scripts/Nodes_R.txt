@@ -1,0 +1,16 @@
+if (!require("sf")) install.packages("sf")
+if (!require("dplyr")) install.packages("dplyr")
+​
+​
+edges <- st_read("D:/JIBE/01_DataInput/EyeLevelGreenAUS/Final_Edge_Geopackage_V1_17082022.gpkg") %>% st_drop_geometry()
+​
+nodes_from <- st_as_sf(edges, coords = (c("fromx", "fromy"))) %>% st_set_crs(28355) %>% select(from_id)
+nodes_to <- st_as_sf(edges, coords = (c("tox", "toy"))) %>% st_set_crs(28355) %>% select(to_id)
+​
+nodes <- bind_rows(nodes_from, nodes_to)
+nodes <- unique(nodes)
+nodes$from_id <- ifelse(is.na(nodes$from_id) == TRUE, nodes$to_id, nodes$from_id)
+colnames(nodes)[1] <- "nodeid"
+nodes <- nodes %>% distinct(nodeid, .keep_all = TRUE) %>% st_as_sf(coords = c('X', 'Y')) %>% st_set_crs(st_crs(edges)) %>% select(-to_id)
+​
+geojsonio::geojson_write(nodes, file  = file.path("D:/JIBE/01_DataInput/EyeLevelGreenAUS/nodes.gpkg"))
