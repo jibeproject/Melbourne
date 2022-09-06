@@ -1,2 +1,0 @@
-Other GIS data used in the creation of AADT outputs:
-https://www.dropbox.com/s/tj63w75t6kgc7ny/OSM_BaseNetwork_WGS84.zip?dl=0
