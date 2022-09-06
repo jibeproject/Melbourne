@@ -1,0 +1,82 @@
+rm(list=ls())   # all variables will be removed
+gc()   # clear ram  
+options(scipen = 999) # no scientific notion
+library("dplyr") 
+library("data.table") 
+library("operators")   #    %!in%/
+library("sf")
+library("foreign")
+
+
+data_import <- fread(file= "C:/ShannonEntropy/03_Results/Intersect_roadbuffer_POI.csv") 
+
+#data_import <- read.csv(file= "C:/ShannonEntropy/03_Results/Intersect_roadbuffer_POI.csv",
+#                        header=TRUE, sep=",", stringsAsFactors=FALSE,check.names = FALSE) 
+data_import$POI_type <- 1  # FOI_negative
+data_import$POI_type[data_import$categoriza == 'FOI_individual'] <- 2
+data_import$POI_type[data_import$categoriza == 'FOI_highstreet'] <- 3  # number coding increases calculation speed (probably, untested)
+data_import <- subset(data_import,select=c('edgeID','POI_type'))
+head(data_import)
+
+road_list <- as.data.frame(matrix(nrow = length(unique(data_import$edgeID)),ncol=1))
+colnames(road_list) <- c('edgeID')
+road_list$edgeID <- unique(data_import$edgeID)
+road_list$Shannon <- NA
+head(road_list)
+
+
+counter <- 1
+while(counter <= nrow(road_list)){ # counter
+  
+  tempt_extract <- data_import[data_import$edgeID== road_list[counter,'edgeID']]$POI_type
+  
+  tempt_index <- NA
+  
+  if(length(tempt_extract) > 0){
+    
+  P_neg <- sum(tempt_extract == 1)/length(tempt_extract)
+  P_ind <- sum(tempt_extract == 2)/length(tempt_extract)
+  P_hig <- sum(tempt_extract == 3)/length(tempt_extract)
+  
+  tempt_index <- -(P_neg*log(P_neg) + P_ind*log(P_ind) + P_hig*log(P_hig) ) # calculate Shannon index 
+  }
+  
+  road_list[counter,'Shannon'] <- tempt_index
+  counter <- counter + 1
+print(counter/nrow(road_list),digits=3) # check for progress
+  
+} # counter
+
+hist(road_list$Shannon) # dev.off()
+
+write.csv(road_list,file="C:/ShannonEntropy/03_Results/EdgeID_Shannon.csv", row.names = FALSE)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+  
+  
