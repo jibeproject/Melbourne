@@ -1,0 +1,63 @@
+library(dplyr)
+library(tibble)
+library(tidyr)
+library(magrittr)
+require(dplyr)
+require(magrittr)
+library (data.table)
+library(parallel)
+library(sf)
+library(raster)
+library(qgisprocess)
+
+osm <- st_read("signal_type.gpkg")
+nrow (osm)
+osm2 <- st_read("road_width.gpkg")%>%st_drop_geometry()
+colnames(osm2)
+osm3 <- osm2 %>% select(edgeID,TRAFFIC_WI_median,averageWidth.imp,averageWidth)
+joined <- left_join(osm,osm3, by = "edgeID")
+nrow(joined)
+NDVI <- raster("NDVI.tif")
+nrow(joined)
+osm2 <- distinct(osm2)
+
+#make the less then 0.1 NDVI values zero to remove water, building and bare land pixels
+NDVI[NDVI < 0.1] <- 0
+
+#Varying buffer distance for different road based on their width. Here we devide the road width by 2, and then add a 20 m buffer distance to that
+joined$bufferdist <- ((joined$averageWidth/2)) + 20
+
+test <- osm2[1:10,]
+
+osmBuffer <- st_buffer(joined, dist = joined$bufferdist)
+
+
+#QGIS zonal statistics is much quicker than base r functions of raster or terra package as it works ob native C++
+#if possible the code should run QGIS based algorithm
+NDVIzonal <- qgis_run_algorithm(
+  "native:zonalstatisticsfb",
+  INPUT = osmBuffer,
+  INPUT_RASTER = NDVI,
+  RASTER_BAND = 1,
+  STATISTICS = 2, #for mean = 2
+  COLUMN_PREFIX = 'NDVI'
+)
+
+NDVIzonal_sf <- sf::read_sf(qgis_output(NDVIzonal, "OUTPUT"))
+NDVIzonal_sf2 <- NDVIzonal_sf%>%st_drop_geometry()
+colnames(NDVIzonal_sf2)
+NDVIzonal_sf2 <- ndvi %>% select (edgeID,NDVImean,averageWidth.imp,averageWidth,bufferdist,TRAFFIC_WI_median)%>%st_drop_geometry()
+final <- left_join(joined,NDVIzonal_sf2, by = 'edgeID')
+
+#make sure column names are the same to 
+colnames(final)
+final$mdl_flt <- NULL
+
+final <- final %>% rename ( speed = maxsped,
+                               cros_cnt=cros_cnt.y,
+                               averageWidth_median= TRAFFIC_WI_median,
+                            surface = surface.x, 
+                            Modalfil = mdl_flt,
+                            mf_cnt = mdl_fl_)
+st_write(final, "all_attributes_joined.gpkg",drivers = "GPKG")
+
