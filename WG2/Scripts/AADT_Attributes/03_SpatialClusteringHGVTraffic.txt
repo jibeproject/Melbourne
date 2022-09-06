@@ -1,0 +1,50 @@
+rm(list=ls())   # all variables will be removed
+gc()
+options(scipen = 999) # no scientific notion
+# library("rjson")
+library("dplyr") 
+library("operators")   #    %!in%
+library("foreign") 
+library("data.table") 
+library("sf")
+library("rgdal")
+library("dbscan")
+
+
+data_points <- read.csv("C:/00_Data/LinkCentroids_TruckAADT.csv", header=TRUE, sep=",", stringsAsFactors=FALSE,check.names = FALSE)
+data_points <- subset(data_points,data_points$AADT_truck >= quantile(data_points$AADT_truck, probs = c(0.98))[1] )  # links with the highest 2% truck AADT
+data_points <- subset(data_points,!is.na(data_points$long) & !is.na(data_points$lat))
+data_points <- subset(data_points,select=c('long','lat'))
+head(data_points)
+data_points$point_count <- 0
+cluster_center_output <- data_points[0,]
+
+data_points_plot <- data_points
+
+sp::coordinates(data_points_plot) <- ~long+lat
+sp::proj4string(data_points_plot) <- CRS(SRS_string = "EPSG:4326") # EPSG:4326  3112
+plot(data_points_plot) # dev.off()
+
+data_points_plot <- spTransform(data_points_plot,CRS("+proj=utm +zone=55H ellps=WGS84"))
+data_points_plot <- st_as_sf(data_points_plot)
+data_points_plot <- st_coordinates(data_points_plot) 
+knn_output_tempt <- dbscan(data_points_plot, eps = 180, minPts = 5) # eps = 150, minPts = 10
+data_points$clustered <- knn_output_tempt$cluster
+data_points <- subset(data_points,data_points$clustered >0)
+
+cluster_list <- unique(data_points$clustered)
+length(cluster_list)
+counter <- 1 
+while (counter <= length(cluster_list) ) {
+  data_points_tempt <- subset(data_points,data_points$clustered == counter )
+  cluster_center_output[counter,"long"] <-   mean(data_points_tempt$long)
+  cluster_center_output[counter,"lat"] <-   mean(data_points_tempt$lat)
+  cluster_center_output[counter,"point_count"] <- nrow(data_points_tempt)
+  counter <- counter + 1
+}
+
+cluster_center_output
+
+# write.csv(cluster_center_output,file="C:/04_Results/HGV_clusters.csv", row.names = FALSE)
+
+
