@@ -1,0 +1,82 @@
+library(sf)
+library(dplyr)
+library(qgisprocess)
+
+osm <- st_read("final_joined_.gpkg")
+head (osm)
+#read traffic signals
+trafficsignal <- st_read("traffic_lights.shp")
+head (trafficsignal)
+#read crossing points
+crossingpnts <- st_read("crossing_data.shp")
+
+unique(osm$highway)
+unique(trafficsignal$COMMENTS)
+#crossingpnts <- crossingpnts$crossing[crossingpnts$crossing=="traffic_signals"]
+
+#attributes spatial join
+trafficsignal_buf <- st_buffer(trafficsignal, 20) #buffer existing TrafficSignals locations to remove crossing points
+trafficsignal_buf [,15]
+crossingpnts_nosign <- st_intersection(crossingpnts, trafficsignal_buf)
+crossingpnts_nosign <- crossingpnts[!crossingpnts$geometry %in% crossingpnts_nosign$geometry, ] #keep only points not in TrafficSignals dataset
+crossingpnts_nosign_buf <- st_buffer(crossingpnts_nosign, 20)
+
+osm_trafficsignal <- osm[,c("edgeID", "highway")]
+osm_trafficsignal <- osm_trafficsignal[osm_trafficsignal$highway != "motorway" & osm_trafficsignal$highway != "motorway_link", ]
+osm_trafficsignal <- st_intersection(osm_trafficsignal, trafficsignal_buf[,15]) %>% st_drop_geometry() %>% select(-highway) #get edgeIDs for trafficsignals
+nrow(osm_trafficsignal )
+
+osm_trafficsignal<- osm_trafficsignal[osm_trafficsignal$COMMENTS != "Fire station wig wag", ]
+head(osm_trafficsignal)
+#PELICAN
+osm_trafficsignal <- osm_trafficsignal %>% group_by(edgeID, COMMENTS) %>% tally() %>% ungroup()
+bike_trafficsignal <- osm_trafficsignal[grepl("PELICAN", osm_trafficsignal$COMMENTS),]
+bike_trafficsignal <- bike_trafficsignal %>% group_by(edgeID) %>% summarise(signaltype = paste(unique(COMMENTS), collapse = "/"), bike_cros_cnt = sum(n))
+
+#crossing facility
+unique(crossingpnts_nosign_buf[,4])
+osm_crossingpnts_nosign <- osm[,c("edgeID", "highway")]
+osm_crossingpnts_nosign <- osm_crossingpnts_nosign[osm_crossingpnts_nosign$highway != "motorway" & osm_crossingpnts_nosign$highway != "motorway_link", ]
+osm_crossingpnts_nosign <- st_intersection(osm_crossingpnts_nosign, crossingpnts_nosign_buf[,6]) %>% st_drop_geometry() %>% select(-highway)#get edgeIDs for crossing pnt
+osm_crossingpnts_nosign <- osm_crossingpnts_nosign %>% group_by(edgeID, crossing_r) %>% tally() %>% ungroup()
+unique(osm_crossingpnts_nosign$crossing_r)
+#tally trafficsignal var 'type' and 'crossing facility' per edge-- multiple facilities per edge are merged
+crossings_final_type <- osm_trafficsignal %>% group_by(edgeID) %>% summarise(signaltype = paste(unique(COMMENTS), collapse = "/"), signal_cnt = sum(n))
+
+#join traffic with crossing
+#crossings_final <- merge(crossings_final_type, crossings_final_crossing, by = "edgeID", all = TRUE)
+crossings_final <- merge(crossings_final_type, osm_crossingpnts_nosign, by = "edgeID", all = TRUE) %>% ungroup()
+crossings_final$signal_cnt <- ifelse(is.na(crossings_final$signal_cnt), as.numeric(0), crossings_final$signal_cnt)
+crossings_final$n <- ifelse(is.na(crossings_final$n), as.numeric(0), crossings_final$n)
+
+crossings_final$cros_cnt <- rowSums(crossings_final[,c("signal_cnt", "n")])
+#crossings_final$crossingtype <- ifelse(is.na(crossings_final$crossingtype) | stringr::str_detect(crossings_final$crossingtype, "NA") == TRUE, crossings_final$Object_Ref, crossings_final$crossingtype)
+crossings_final <- crossings_final %>% select(-c("signal_cnt", "n"))
+#add 'Signal' type for crossings missing information
+crossings_final$signaltype <- ifelse(is.na(crossings_final$signaltype), "Signal", crossings_final$signaltype)
+head (crossings_final)
+
+unique(crossings_final$crossing_r)
+unique(crossings_final$signaltype)
+
+crossings_final$signaltype <- ifelse(stringr::str_detect(crossings_final$signaltype, "PELICAN") == TRUE, as.numeric(3), crossings_final$signaltype)
+crossings_final$signaltype <- ifelse(stringr::str_detect(crossings_final$signaltype, "PUFFIN") == TRUE, as.numeric(2), crossings_final$signaltype)
+crossings_final$signaltype <- ifelse(stringr::str_detect(crossings_final$crossing_r, "toucan") == TRUE, as.numeric(3), crossings_final$signaltype)                                       
+crossings_final$signaltype <- ifelse(stringr::str_detect(crossings_final$crossing_r, "pelican") == TRUE, as.numeric(3), crossings_final$signaltype)  
+#crossings_final$signaltype <- ifelse(stringr::str_detect(crossings_final$signaltype, "PELICAN") == TRUE && stringr::str_detect(crossings_final$crossing_r, "toucan") == TRUE, as.numeric(4), crossings_final$signaltype)
+
+crossings_final <- crossings_final %>% select(-crossing_r)
+
+#add to the edges
+osm_final <- merge(osm, crossings_final, by = "edgeID", all.x = TRUE) #attach crossing facility info on the edges
+osm_final$signaltype <- as.numeric(osm_final$signaltype)
+
+#replace NAs for 'signaltype' with 1 (very hard to cross) and 'cros_cnt' with 0
+osm_final$signaltype <- ifelse(is.na(osm_final$signaltype), as.numeric(1), osm_final$signaltype)
+osm_final$cros_cnt.y<- ifelse(is.na(osm_final$cros_cnt.y), as.numeric(0), osm_final$cros_cnt.y)
+
+osm_final <- distinct(osm_final)
+nrow (osm_final)
+
+# write the data 
+st_write(osm_final, dsn="signal_type.gpkg",drivers = "GPKG")
