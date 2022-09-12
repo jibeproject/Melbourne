@@ -1,0 +1,177 @@
+rm(list=ls())   # all variables will be removed
+gc()
+options(scipen = 999) # no scientific notion
+# library("rjson")
+library("plyr")
+library("dplyr") 
+library("operators")   #    %!in%
+library("foreign") 
+library("data.table") 
+library("sf")
+library("rgdal")
+library("randomForest")   # library containing the random forest
+
+#----------------------AADT data in the "HMGNS_FLOW" column
+#----------------------85th speed data in the "maxspeed" column (i.e. the posted speed limit)
+
+#---------------load traffic counter data---------------point layer---------------WGS84---------------
+data_points_plot <- read_sf("C:/01_GIS/cal_AADT_source.shp")
+data_points_plot$row_id <- c(1:nrow(data_points_plot))
+
+data_points_data <- as.data.frame(subset(data_points_plot,select=c('row_id','HMGNS_FLOW','TIS_ID'))) 
+data_points_data <- subset(data_points_data,select=-c(geometry)) # 
+
+traffic_volume <- read.csv(file= "C:/Users/Hao/OneDrive - UNSW/01_Workshop/Z_past/10_2_AADT/00_Data/car/Traffic_Volume.csv",
+                           header=TRUE, sep=",", stringsAsFactors=FALSE,check.names = FALSE) # head(traffic_volume)
+traffic_volume <- subset(traffic_volume,select=c('TIS_ID','TWO_WAY_AADT','TWO_WAY_AADT_TRUCKS'))
+data_points_data <- left_join(data_points_data,traffic_volume,by=c('TIS_ID'='TIS_ID'))
+data_points_data <- subset(data_points_data,!duplicated(data_points_data$TIS_ID))
+data_points_data <- subset(data_points_data,!is.na(data_points_data$TWO_WAY_AADT))
+data_points_data <- subset(data_points_data,!is.na(data_points_data$TWO_WAY_AADT_TRUCKS))
+
+head(data_points_data)
+
+#---------------load  line layer---------------WGS84---------------
+# OSM_shape <- read_sf( "C:/01_GIS/OSM_BaseNetwork_WGS84.shp") # head(OSM_shape)
+
+Road_shape <-st_read("C:/00_Data/AADT_output_artificial_adjusted2.gpkg") 
+head(Road_shape)
+# st_crs(data_points_plot)
+# st_crs(Road_shape)
+Road_shape <- st_transform(Road_shape,st_crs(data_points_plot)) 
+
+#---------------join data from traffic counter to road ---------------
+spatial_nearest_join <- st_nearest_feature(Road_shape,data_points_plot) # head(spatial_nearest_join)
+spatial_nearest_join_dist <-  st_distance(Road_shape, data_points_plot[spatial_nearest_join,], by_element=TRUE)
+cal_dist_output <- cbind(as.data.frame(spatial_nearest_join),as.data.frame(spatial_nearest_join_dist))
+colnames(cal_dist_output) <- c('row_id','dist_nearest')
+head(cal_dist_output)
+Road_shape <- cbind(Road_shape,cal_dist_output)
+Road_shape <- left_join(Road_shape,data_points_data,by=c('row_id'='row_id'))
+Road_shape$dist_nearest <- as.numeric(Road_shape$dist_nearest)
+Road_shape$TWO_WAY_AADT[Road_shape$dist_nearest > 25] <- NA 
+# set threshold distance of 25 meters --- AADT invalid if the distance between road and counter greater than 25 meters
+Road_shape$TWO_WAY_AADT[Road_shape$highway == 'pedestrian' | Road_shape$highway == 'cycleway' | Road_shape$highway == 'steps'] <- 0
+
+#----------------- predict missing AADT ---------------------
+Road_shape$cal_slope_cal <- abs(Road_shape$slope)
+Road_shape$cal_slope_cal[is.na(Road_shape$cal_slope_cal)] <- mean(abs(Road_shape$slope),na.rm=TRUE)
+
+Road_shape$cal_freespeed <- Road_shape$freespeed
+Road_shape$cal_freespeed[is.na(Road_shape$cal_freespeed)] <- mean(Road_shape$cal_freespeed,na.rm=TRUE)
+
+Road_shape$cal_quietness <- Road_shape$quietness
+Road_shape$cal_quietness[is.na(Road_shape$cal_quietness)] <- mean(Road_shape$quietness,na.rm=TRUE)
+
+Road_shape_missing <- subset(Road_shape,is.na(Road_shape$TWO_WAY_AADT))
+Road_shape_notmissing <- subset(Road_shape,!is.na(Road_shape$TWO_WAY_AADT))
+
+# Road_shape <- subset(Road_shape,select= -c(cal_freespeed, cal_slope_cal,cal_quietness))
+# head(Road_shape)
+
+# st_write(Road_shape, "C:/04_Results/AADT_output.shp", driver="ESRI Shapefile")
+rf_model <-  randomForest(TWO_WAY_AADT ~ cal_freespeed + highway  + is_oneway + cycleway + is_walk + is_car + is_segregated + is_sidewalk + 
+                            cal_quietness + cal_slope_cal,
+              ntree= 64,data = Road_shape_notmissing,importance=TRUE) 
+summary(rf_model)
+Road_shape_missing$TWO_WAY_AADT <- predict(rf_model, Road_shape_missing)
+
+Road_shape2 <- rbind(Road_shape_missing,Road_shape_notmissing)
+Road_shape2$TWO_WAY_AADT[Road_shape2$highway == 'pedestrian' | Road_shape2$highway == 'cycleway' | Road_shape2$highway == 'steps'] <- 0
+head(Road_shape2)
+
+Road_shape_missing <- subset(Road_shape2,is.na(Road_shape2$TWO_WAY_AADT_TRUCKS))
+Road_shape_notmissing <- subset(Road_shape2,!is.na(Road_shape2$TWO_WAY_AADT_TRUCKS))
+
+set.seed(65)
+calibration_data <- Road_shape_notmissing  # to reduce computation time - take a smaller sample
+calibration_data$cal_sample  <- sample(c(0,1), size = nrow(calibration_data), replace = TRUE, prob = c(0.75,0.25))
+calibration_data <- subset(calibration_data,calibration_data$cal_sample == 1)
+rf_model <-  randomForest(TWO_WAY_AADT_TRUCKS ~ cal_freespeed + highway  + is_oneway + cycleway + is_walk + is_car + is_segregated + is_sidewalk + 
+                            cal_quietness + cal_slope_cal,
+                          ntree= 64,data = calibration_data,importance=TRUE) 
+summary(rf_model)
+
+Road_shape_missing$TWO_WAY_AADT_TRUCKS <- predict(rf_model, Road_shape_missing)
+
+Road_shape2 <- rbind(Road_shape_missing,Road_shape_notmissing)
+Road_shape2$TWO_WAY_AADT_TRUCKS[Road_shape2$highway == 'pedestrian' | Road_shape2$highway == 'cycleway' | Road_shape2$highway == 'steps'] <- 0
+Road_shape2 <- subset(Road_shape2,select= -c(row_id, dist_nearest))
+head(Road_shape2)
+#----------------- predict missing AADT ---------------------
+
+
+Road_shape2$HGV_adj_AADT <- (Road_shape2$TWO_WAY_AADT - Road_shape2$TWO_WAY_AADT_TRUCKS) + (Road_shape2$TWO_WAY_AADT_TRUCKS * 6)
+# 6 is an adjustment factor for trucks; 1 truck equals 6 passenger car equivalent (PCE)
+
+
+#----------------- load speed limit data from OSM ---------------------
+OSM_centroids <- read_sf("C:/00_Data/OSM_Link_centroids.shp") # plot(Road_shape)
+OSM_centroids$row_id <- c(1:nrow(OSM_centroids))
+OSM_centroids <- subset(OSM_centroids,OSM_centroids$fclass != 'cycleway')
+OSM_centroids <- subset(OSM_centroids,OSM_centroids$fclass != 'steps')
+OSM_centroids <- subset(OSM_centroids,OSM_centroids$fclass != 'pedestrian')
+# head(OSM_centroids)
+
+spatial_nearest_join <- st_nearest_feature(Road_shape2,OSM_centroids) # head(spatial_nearest_join)
+spatial_nearest_join_dist <-  st_distance(Road_shape2, OSM_centroids[spatial_nearest_join,], by_element=TRUE) # head(spatial_nearest_join_dist)
+
+cal_dist_output <- cbind(as.data.frame(spatial_nearest_join),as.data.frame(spatial_nearest_join_dist))
+colnames(cal_dist_output) <- c('row_id','dist_nearest')
+head(cal_dist_output)
+Road_shape2 <- cbind(Road_shape2,cal_dist_output)
+OSM_centroids <- as.data.frame(OSM_centroids)
+OSM_centroids <- subset(OSM_centroids,select=c('row_id','maxspeed'))
+Road_shape2 <- left_join(Road_shape2,OSM_centroids,by=c('row_id'='row_id'))
+Road_shape2$dist_nearest <- as.numeric(Road_shape2$dist_nearest)
+Road_shape2$maxspeed[Road_shape2$dist_nearest > 20] <- NA 
+Road_shape2$maxspeed[Road_shape2$maxspeed == 0] <- NA 
+Road_shape2$maxspeed[Road_shape2$maxspeed < 40] <- NA
+head(Road_shape2)
+#----------------- load speed limit data from OSM ---------------------
+
+
+#----------------- predict missing 85th speed ---------------------
+Road_shape_notmissing2 <- subset(Road_shape2,!is.na(Road_shape2$maxspeed) )
+Road_shape_missing2 <- subset(Road_shape2,is.na(Road_shape2$maxspeed))
+rf_model2 <-  randomForest(maxspeed ~ cal_freespeed + highway  + is_oneway + cycleway + is_walk + is_car + is_segregated + is_sidewalk + 
+                             cal_quietness + cal_slope_cal,
+                          ntree= 64,data = Road_shape_notmissing2,importance=TRUE) # head(Road_shape_notmissing2)
+
+
+summary(rf_model2)
+Road_shape_missing2$maxspeed <- predict(rf_model2, Road_shape_missing2)
+Road_shape2 <- rbind(Road_shape_missing2,Road_shape_notmissing2)
+Road_shape2$maxspeed[Road_shape2$highway == 'pedestrian' | Road_shape2$highway == 'cycleway' | Road_shape2$highway == 'steps'] <- 0
+Road_shape2 <- subset(Road_shape2,select= -c(row_id, dist_nearest))
+Road_shape2$maxspeed <- round_any(Road_shape2$maxspeed, 5) # round to the nearest 5
+
+# test <- subset(Road_shape2,Road_shape2$maxspeed==0)
+# unique(test$highway)
+
+#--------correct for extreme values-----------
+Road_shape2$maxspeed[Road_shape2$maxspeed > 120] <- 120
+Road_shape2$maxspeed[Road_shape2$maxspeed < 40] <- 40
+Road_shape2$maxspeed[Road_shape2$highway != 'motorway' & Road_shape2$highway != 'trunk' &  Road_shape2$highway != 'primary' &
+      Road_shape2$highway != 'motorway_link' &  Road_shape2$highway != 'primary_link' & Road_shape2$maxspeed > 100] <- 100
+
+Road_shape2 <- subset(Road_shape2,select= -c(cal_freespeed, cal_slope_cal,cal_quietness,HMGNS_FLOW.x,HMGNS_FLOW.y))
+
+head(Road_shape2)
+
+
+colnames(Road_shape2)[34] <- c("AADT")           # two-way AADT
+colnames(Road_shape2)[35] <- c("AADT_truck")  # two-way truck AADT
+colnames(Road_shape2)[36] <- c("Adj_AADT")   # HGV adjusted AADT
+colnames(Road_shape2)[37] <- c("SpeedLimit")  # 85% speed
+head(Road_shape2)
+#----------------- predict missing 85th speed ---------------------
+
+hist(Road_shape2$SpeedLimit)
+#---------use the following code to save results-------
+# ---Field names abbreviated due to ESRI Shapefile driver
+# st_write(Road_shape2, "C:/04_Results/AADT_output_artificial.shp", driver="ESRI Shapefile")
+
+
+
+
