@@ -10,7 +10,9 @@ library("data.table")
 library("sf")
 library("rgdal")
 library("randomForest")   # library containing the random forest
-
+library('Metrics')
+library('gbm')  # gradient boosting machine
+library('mice')
 #----------------------AADT data in the "HMGNS_FLOW" column
 #----------------------85th speed data in the "maxspeed" column (i.e. the posted speed limit)
 
@@ -21,7 +23,7 @@ data_points_plot$row_id <- c(1:nrow(data_points_plot))
 data_points_data <- as.data.frame(subset(data_points_plot,select=c('row_id','HMGNS_FLOW','TIS_ID'))) 
 data_points_data <- subset(data_points_data,select=-c(geometry)) # 
 
-traffic_volume <- read.csv(file= "C:/Users/Hao/OneDrive - UNSW/01_Workshop/Z_past/10_2_AADT/00_Data/car/Traffic_Volume.csv",
+traffic_volume <- read.csv(file= "C:/00_Data/car/Traffic_Volume.csv",
                            header=TRUE, sep=",", stringsAsFactors=FALSE,check.names = FALSE) # head(traffic_volume)
 traffic_volume <- subset(traffic_volume,select=c('TIS_ID','TWO_WAY_AADT','TWO_WAY_AADT_TRUCKS'))
 data_points_data <- left_join(data_points_data,traffic_volume,by=c('TIS_ID'='TIS_ID'))
@@ -75,7 +77,7 @@ rf_model <-  randomForest(TWO_WAY_AADT ~ cal_freespeed + highway  + is_oneway + 
               ntree= 64,data = Road_shape_notmissing,importance=TRUE) 
 summary(rf_model)
 Road_shape_missing$TWO_WAY_AADT <- predict(rf_model, Road_shape_missing)
-
+rm(rf_model)
 Road_shape2 <- rbind(Road_shape_missing,Road_shape_notmissing)
 Road_shape2$TWO_WAY_AADT[Road_shape2$highway == 'pedestrian' | Road_shape2$highway == 'cycleway' | Road_shape2$highway == 'steps'] <- 0
 head(Road_shape2)
@@ -93,7 +95,7 @@ rf_model <-  randomForest(TWO_WAY_AADT_TRUCKS ~ cal_freespeed + highway  + is_on
 summary(rf_model)
 
 Road_shape_missing$TWO_WAY_AADT_TRUCKS <- predict(rf_model, Road_shape_missing)
-
+rm(rf_model)
 Road_shape2 <- rbind(Road_shape_missing,Road_shape_notmissing)
 Road_shape2$TWO_WAY_AADT_TRUCKS[Road_shape2$highway == 'pedestrian' | Road_shape2$highway == 'cycleway' | Road_shape2$highway == 'steps'] <- 0
 Road_shape2 <- subset(Road_shape2,select= -c(row_id, dist_nearest))
@@ -127,27 +129,56 @@ Road_shape2$dist_nearest <- as.numeric(Road_shape2$dist_nearest)
 Road_shape2$maxspeed[Road_shape2$dist_nearest > 20] <- NA 
 Road_shape2$maxspeed[Road_shape2$maxspeed == 0] <- NA 
 Road_shape2$maxspeed[Road_shape2$maxspeed < 40] <- NA
+Road_shape2$highway <- as.factor(Road_shape2$highway)
 head(Road_shape2)
 #----------------- load speed limit data from OSM ---------------------
 
 
 #----------------- predict missing 85th speed ---------------------
-Road_shape_notmissing2 <- subset(Road_shape2,!is.na(Road_shape2$maxspeed) )
+
+mice_data <- subset(Road_shape2,select=c('cal_freespeed','highway','is_oneway','cycleway','is_walk','is_car','is_segregated','is_sidewalk',
+                                         'cal_quietness','cal_slope_cal','maxspeed'),drop=TRUE) # head(mice_data)
+mice_output <- mice(mice_data, seed = 661) # head(mice_output)
+test <- mice_output$imp$maxspeed
+test$mice_pred <- (test$`1` + test$`2` + test$`3` + test$`4` + test$`5`)/5 # head(test)
+
+Road_shape_notmissing2 <- subset(Road_shape2,!is.na(Road_shape2$maxspeed))
 Road_shape_missing2 <- subset(Road_shape2,is.na(Road_shape2$maxspeed))
+Road_shape_missing2$maxspeed_pred0 <- test$mice_pred
+
+
 rf_model2 <-  randomForest(maxspeed ~ cal_freespeed + highway  + is_oneway + cycleway + is_walk + is_car + is_segregated + is_sidewalk + 
                              cal_quietness + cal_slope_cal,
                           ntree= 64,data = Road_shape_notmissing2,importance=TRUE) # head(Road_shape_notmissing2)
-
-
 summary(rf_model2)
-Road_shape_missing2$maxspeed <- predict(rf_model2, Road_shape_missing2)
+Road_shape_missing2$maxspeed_pred1 <- predict(rf_model2, Road_shape_missing2)
+rm(rf_model2)
+
+gbm_model <- gbm(formula = maxspeed ~ cal_freespeed + highway  + is_oneway + cycleway + is_walk + is_car + is_segregated + is_sidewalk + 
+                   cal_quietness + cal_slope_cal ,
+                 distribution = "gaussian", 
+                 data = Road_shape_notmissing2, 
+                 n.trees = 100, 
+                 interaction.depth = 10, shrinkage = 0.01) 
+summary(gbm_model)
+Road_shape_missing2$maxspeed_pred2 <- predict(gbm_model, Road_shape_missing2)
+rm(gbm_model)
+
+Road_shape_missing2$maxspeed <- (Road_shape_missing2$maxspeed_pred0 + Road_shape_missing2$maxspeed_pred1 + Road_shape_missing2$maxspeed_pred2)/3
+
+Road_shape_missing2 <- subset(Road_shape_missing2,select=-c(maxspeed_pred0,maxspeed_pred1,maxspeed_pred2))
+
+# head(Road_shape_missing2)
+# head(Road_shape_notmissing2)
+
+
 Road_shape2 <- rbind(Road_shape_missing2,Road_shape_notmissing2)
 Road_shape2$maxspeed[Road_shape2$highway == 'pedestrian' | Road_shape2$highway == 'cycleway' | Road_shape2$highway == 'steps'] <- 0
 Road_shape2 <- subset(Road_shape2,select= -c(row_id, dist_nearest))
 Road_shape2$maxspeed <- round_any(Road_shape2$maxspeed, 5) # round to the nearest 5
 
 # test <- subset(Road_shape2,Road_shape2$maxspeed==0)
-# unique(test$highway)
+# unique(test$highway)   head(Road_shape2)  
 
 #--------correct for extreme values-----------
 Road_shape2$maxspeed[Road_shape2$maxspeed > 120] <- 120
@@ -170,7 +201,7 @@ head(Road_shape2)
 hist(Road_shape2$SpeedLimit)
 #---------use the following code to save results-------
 # ---Field names abbreviated due to ESRI Shapefile driver
-# st_write(Road_shape2, "C:/04_Results/AADT_output_artificial.shp", driver="ESRI Shapefile")
+# st_write(Road_shape2, "C:/U04_Results/AADT_output_artificial.shp", driver="ESRI Shapefile")
 
 
 
